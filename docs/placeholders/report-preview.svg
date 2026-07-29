@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="540" viewBox="0 0 960 540" role="img" aria-label="Placeholder report preview">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1f4e79"/>
+      <stop offset="100%" stop-color="#0f2a42"/>
+    </linearGradient>
+  </defs>
+  <rect width="960" height="540" fill="#f7f4ef"/>
+  <rect width="960" height="110" fill="url(#bg)"/>
+  <text x="40" y="58" fill="#f5f7fa" font-family="Georgia, serif" font-size="36">Check Yourself</text>
+  <text x="40" y="88" fill="#d7e2ec" font-family="sans-serif" font-size="14">Placeholder report preview  not real analysis data</text>
+  <rect x="40" y="140" width="200" height="90" rx="8" fill="#fff" stroke="#d8d2c8"/>
+  <rect x="260" y="140" width="200" height="90" rx="8" fill="#fff" stroke="#d8d2c8"/>
+  <rect x="480" y="140" width="200" height="90" rx="8" fill="#fff" stroke="#d8d2c8"/>
+  <rect x="700" y="140" width="220" height="90" rx="8" fill="#fff" stroke="#d8d2c8"/>
+  <text x="55" y="175" fill="#5a5a5a" font-family="sans-serif" font-size="12">RECORD</text>
+  <text x="55" y="205" fill="#1a1a1a" font-family="sans-serif" font-size="28" font-weight="700">4-5-1</text>
+  <text x="275" y="175" fill="#5a5a5a" font-family="sans-serif" font-size="12">AVG ACPL</text>
+  <text x="275" y="205" fill="#1a1a1a" font-family="sans-serif" font-size="28" font-weight="700">42.3</text>
+  <text x="495" y="175" fill="#5a5a5a" font-family="sans-serif" font-size="12">BLUNDERS/G</text>
+  <text x="495" y="205" fill="#1a1a1a" font-family="sans-serif" font-size="28" font-weight="700">0.6</text>
+  <text x="715" y="175" fill="#5a5a5a" font-family="sans-serif" font-size="12">CRITICAL</text>
+  <text x="715" y="205" fill="#1a1a1a" font-family="sans-serif" font-size="28" font-weight="700">28</text>
+  <rect x="40" y="260" width="880" height="220" rx="8" fill="#fff" stroke="#d8d2c8"/>
+  <text x="60" y="295" fill="#1f4e79" font-family="Georgia, serif" font-size="20">Evaluation charts (placeholder)</text>
+  <polyline points="80,420 160,380 240,390 320,340 400,360 480,300 560,320 640,280 720,310 800,260 880,290"
+            fill="none" stroke="#1f4e79" stroke-width="3"/>
+  <line x1="80" y1="370" x2="880" y2="370" stroke="#cccccc" stroke-dasharray="4 4"/>
+  <text x="60" y="460" fill="#8a4b08" font-family="sans-serif" font-size="13">PLACEHOLDER IMAGE  generate a real screenshot with check-yourself analyze</text>
+</svg>
