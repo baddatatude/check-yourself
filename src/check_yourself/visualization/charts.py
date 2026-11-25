@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from html import escape
+from importlib.resources import files
 from typing import Any
 
 import plotly.graph_objects as go
@@ -20,14 +22,13 @@ def _fig_to_html(fig: go.Figure, *, include_js: bool = False) -> str:
 
 def embed_plotly_js() -> str:
     """Return Plotly JS bundle for offline self-contained reports."""
-    from plotly.offline import get_plotlyjs
-
-    return str(get_plotlyjs())
+    asset = files("check_yourself.reports").joinpath("static", "plotly-basic.min.js")
+    return asset.read_text(encoding="utf-8")
 
 
 def evaluation_graph(game: GameAnalysisResult) -> go.Figure:
     xs = [p["fullmove_number"] for p in game.eval_graph]
-    ys = [p["eval"] for p in game.eval_graph]
+    ys = [p["eval"] if p.get("eval_kind") == "cp" else None for p in game.eval_graph]
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -41,7 +42,7 @@ def evaluation_graph(game: GameAnalysisResult) -> go.Figure:
     )
     fig.add_hline(y=0, line_dash="dot", line_color="#888")
     fig.update_layout(
-        title=f"Evaluation — game {game.metadata.game_id}",
+        title=f"Evaluation — game {escape(game.metadata.game_id)} (mate scores omitted)",
         xaxis_title="Move number",
         yaxis_title="Evaluation (cp, player POV)",
         template="plotly_white",
@@ -148,7 +149,7 @@ def eval_loss_by_phase(stats: OverallStats) -> go.Figure:
 
 
 def per_game_acpl(report: AnalysisReport) -> go.Figure:
-    ids = [g.metadata.game_id for g in report.games]
+    ids = [escape(g.metadata.game_id) for g in report.games]
     vals = [g.average_centipawn_loss for g in report.games]
     fig = go.Figure(go.Bar(x=ids, y=vals, marker_color="#5c6bc0"))
     fig.update_layout(
@@ -168,7 +169,7 @@ def opening_comparison(stats: OverallStats) -> go.Figure | None:
         return None
     fig = go.Figure(
         go.Bar(
-            x=[o.opening for o in openings[:12]],
+            x=[escape(o.opening) for o in openings[:12]],
             y=[o.average_centipawn_loss for o in openings[:12]],
             marker_color="#00838f",
             text=["*" if o.small_sample else "" for o in openings[:12]],
@@ -199,7 +200,7 @@ def piece_bar_chart(
         label = getattr(r, "piece", None)
         if label is None:
             kind = getattr(r, "kind", None)
-            label = kind.value if hasattr(kind, "value") else kind
+            label = getattr(kind, "value", kind)
         labels.append(str(label).replace("_", " "))
     values = [getattr(r, value_attr) for r in rows]
     fig = go.Figure(go.Bar(x=labels, y=values, marker_color=color))
@@ -216,7 +217,8 @@ def piece_bar_chart(
 def build_chart_html_fragments(report: AnalysisReport) -> dict[str, Any]:
     """Build HTML fragments for all charts (Plotly JS embedded separately once)."""
     game_charts = {
-        g.metadata.game_id: _fig_to_html(evaluation_graph(g)) for g in report.games
+        g.metadata.game_id: _fig_to_html(evaluation_graph(g))
+        for g in report.games if not g.timeline
     }
     opening_fig = opening_comparison(report.overall)
     mated_fig = None

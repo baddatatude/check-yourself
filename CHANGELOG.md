@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0 release candidate]
+
+- Offline PGN analysis through the supported Python API and `analyze-pgn` CLI.
+- Correct terminal mate scoring, interactive timelines, actual and suggested
+  continuations, cross-game observations and offline training exercises.
+- Public JSON schema 1.1.0, with 1.0.0 reads.
+- Optional HTML rendering. The experimental legacy workflows remain separate.
+
 ## [0.2.0] — 2026-07-27
 
 ### Added

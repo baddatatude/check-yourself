@@ -51,13 +51,13 @@ class AnalysisSettings(BaseSettings):
     losing_cp: int = Field(default=200, ge=50, description="Clearly losing |eval| (cp)")
 
     chess_com_user_agent: str = Field(
-        default="check-yourself/0.1 (+https://github.com/example/check-yourself; local analysis)",
+        default="check-yourself/0.1 (+https://github.com/baddatatude/check-yourself)",
     )
     chess_com_timeout: float = Field(default=30.0, ge=1.0)
     chess_com_retries: int = Field(default=3, ge=1, le=10)
 
     lichess_user_agent: str = Field(
-        default="check-yourself/0.1 (+https://github.com/example/check-yourself; local analysis)",
+        default="check-yourself/0.1 (+https://github.com/baddatatude/check-yourself)",
     )
     lichess_timeout: float = Field(default=60.0, ge=1.0)
     lichess_retries: int = Field(default=3, ge=1, le=10)

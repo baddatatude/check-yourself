@@ -1,35 +1,69 @@
-name: Tests
+name: Release candidate checks
 
 on:
-  push:
-    branches: [main, master]
   pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
-  quality:
-    runs-on: ubuntu-latest
+  verify:
     strategy:
+      fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12"]
-
+        os: [ubuntu-24.04, macos-15]
+        python: ["3.11", "3.12", "3.13", "3.14"]
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          python-version: ${{ matrix.python-version }}
-
-      - name: Install package
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install Stockfish on Ubuntu
+        if: runner.os == 'Linux'
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-
-      - name: Ruff
-        run: ruff check src tests
-
-      - name: mypy
-        run: mypy
-
-      - name: Pytest (offline)
-        run: pytest -m "not integration"
+          sudo apt-get update
+          sudo apt-get install -y stockfish
+          echo /usr/games >> "$GITHUB_PATH"
+      - name: Install Stockfish on macOS
+        if: runner.os == 'macOS'
+        run: brew install stockfish
+      - name: Install development tools
+        run: python -m pip install -e '.[dev]' build twine
+      - name: Lint and type checking
+        run: |
+          ruff check src tests
+          mypy
+      - name: Test with local engine only
+        shell: bash
+        run: |
+          guard="$(mktemp -d)"
+          cp tests/release/network_guard.py "$guard/sitecustomize.py"
+          export PYTHONPATH="$guard"
+          python -m pytest
+          python -m pytest -o addopts= -q tests/integration/test_live.py::test_live_stockfish_probe tests/integration/test_stockfish_mate.py
+      - name: Build and check artifact metadata
+        run: |
+          python -m build
+          python -m twine check --strict dist/*
+      - name: Verify current dependencies and installed artifacts
+        shell: bash
+        run: |
+          if [[ "${{ matrix.python }}" == 3.11 ]]; then
+            if [[ "$RUNNER_OS" == Linux ]]; then
+              export CHROME_BIN="$(command -v google-chrome || command -v google-chrome-stable)"
+            else
+              export CHROME_BIN="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+            fi
+            test -x "$CHROME_BIN"
+          fi
+          PYTHON=python bash tests/release/check-wheel.sh dist/*.whl
+      - name: Verify lower bounds on Python 3.11
+        if: matrix.python == '3.11'
+        shell: bash
+        run: PIP_CONSTRAINT="$PWD/tests/release/minimum.txt" PYTHON=python bash tests/release/check-wheel.sh dist/*.whl

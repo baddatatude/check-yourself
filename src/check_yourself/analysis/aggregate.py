@@ -201,9 +201,9 @@ def compute_patterns(
 
         for move in game.moves:
             ev = move.eval_after
-            cp = ev.value if ev.kind == EvalKind.CP else (10_000 if ev.value > 0 else -10_000)
+            cp = ev.value if ev.kind == EvalKind.CP else 10_000 * ev.mate_sign
             peak_eval = max(peak_eval, cp)
-            if (ev.kind == EvalKind.MATE and ev.value > 0) or (
+            if (ev.mate_sign > 0) or (
                 ev.kind == EvalKind.CP and ev.value >= settings.winning_cp
             ):
                 had_winning = True

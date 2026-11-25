@@ -14,7 +14,7 @@ from check_yourself.models import (
 def _is_winning(eval_cp_or_mate: MoveAnalysis, *, before: bool, settings: AnalysisSettings) -> bool:
     ev = eval_cp_or_mate.eval_before if before else eval_cp_or_mate.eval_after
     if ev.kind == EvalKind.MATE:
-        return ev.value > 0
+        return ev.mate_sign > 0
     return ev.value >= settings.winning_cp
 
 
@@ -28,7 +28,7 @@ def _is_equal(move: MoveAnalysis, *, before: bool, settings: AnalysisSettings) -
 def _is_losing(move: MoveAnalysis, *, before: bool, settings: AnalysisSettings) -> bool:
     ev = move.eval_before if before else move.eval_after
     if ev.kind == EvalKind.MATE:
-        return ev.value < 0
+        return ev.mate_sign < 0
     return ev.value <= -settings.losing_cp
 
 
@@ -61,8 +61,7 @@ def _reasons_for(move: MoveAnalysis, settings: AnalysisSettings) -> list[Critica
                 move.eval_before.kind == EvalKind.CP
                 and move.eval_loss_cp >= settings.blunder_threshold
             )
-            or move.mate_after is not None
-            and (move.mate_after or 0) < 0
+            or move.eval_after.mate_sign < 0
         )
     ):
         reasons.append(CriticalReason.MISSED_WIN)
@@ -75,12 +74,12 @@ def _reasons_for(move: MoveAnalysis, settings: AnalysisSettings) -> list[Critica
     ):
         reasons.append(CriticalReason.MISSED_DEFENSE)
 
-    before_mate = move.eval_before.kind == EvalKind.MATE and move.eval_before.value > 0
-    after_mated = move.eval_after.kind == EvalKind.MATE and move.eval_after.value < 0
+    before_mate = move.eval_before.mate_sign > 0
+    after_mated = move.eval_after.mate_sign < 0
     introduced_mate_against = (
         move.eval_before.kind == EvalKind.CP
         and move.eval_after.kind == EvalKind.MATE
-        and move.eval_after.value < 0
+        and move.eval_after.mate_sign < 0
     )
     lost_forced_mate = (
         before_mate

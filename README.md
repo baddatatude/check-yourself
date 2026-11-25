@@ -2,232 +2,100 @@
 
 **Check yourself before your rating wrecks itself.**
 
-Check Yourself is a local Python package that downloads a Chess.com or Lichess
-player’s recent games, analyzes them with Stockfish, finds critical mistakes and
-cross-game habits, and writes a self-contained HTML report you open in a browser.
+Review local chess games with Stockfish. Check Yourself connects each evaluation
+to an exact position, lets you replay what happened alongside the engine's suggested
+line, and turns critical positions into exercises. Its Python API returns structured
+results for applications and scripts. Optional HTML reports work offline in a browser.
 
-There is **no separate interactive web server** in this repo yet. The “webapp”
-today is the generated `report.html` file (offline, no CDN). A live dashboard is
-on the Stage 3 roadmap.
+## Install
 
-This project is **not affiliated with Chess.com, Lichess, or Stockfish**.
+Use Python 3.11 or newer and install the Stockfish executable separately.
+The supported Python versions are 3.11–3.14. On macOS
+it is available through Homebrew as `stockfish`. On Ubuntu it is available as the
+`stockfish` package and may be installed in `/usr/games`. Put the executable on
+`PATH`, or pass its path with `--stockfish-path` or `AnalysisOptions.stockfish_path`.
 
-**Version:** 0.2.0 (alpha)
+Install in an activated virtual environment.
 
----
-
-## What you get
-
-| Piece | What it is |
-|-------|------------|
-| **Package / CLI** | `check-yourself` — fetch, analyze, coach, write artifacts |
-| **HTML report** | Browser UI: charts, interactive boards, habits, tactics, optional AI coaching |
-| **JSON artifacts** | Machine-readable `analysis.json` + per-game caches |
-| **Player profile** | Durable coaching memory under `players/` across sessions |
-
----
-
-## How the package works
-
-```text
-check-yourself analyze
-        │
-        ▼
-  GameSource (--platform chess.com | lichess)
-        │  newest N public games + PGNs
-        ▼
-  Stockfish (local engine, optional --workers)
-        │  per-move eval loss for the requested player
-        ▼
-  Aggregates + habits + piece/tactics
-        │  ACPL (capped), phases, openings, patterns, motifs
-        ▼
-  Optional OpenAI coaching (--coach)
-        │  grounded on Stockfish + habit/tactics briefs + prior profile
-        ▼
-  reports/USERNAME-TIMESTAMP/
-        ├── report.html      ← open in browser
-        ├── analysis.json
-        └── games/*.pgn + *.json
-  players/USERNAME__PLATFORM/profile.json   ← durable memory
+```sh
+python -m pip install 'check-yourself-chess[html]==0.2.0'
+check-yourself analyze-pgn --help
 ```
 
-### CLI commands
+Omit `[html]` for Python analysis and JSON output.
 
-| Command | Purpose |
-|---------|---------|
-| `check-yourself analyze USERNAME` | Fetch + Stockfish analyze + write report |
-| `check-yourself coach --from-report PATH` | Re-coach from saved `analysis.json` (no Stockfish) |
-| `check-yourself doctor` | Check Stockfish, Chess.com, Lichess, API key, write access |
+## Review one game or a batch
 
-### Analyze pipeline (detail)
+With a local UTF-8 PGN file:
 
-1. **Platform** — `--platform chess.com` or `--platform lichess` (default `chess.com`). Unsupported values error out; no auto-detect.
-2. **Fetch** — Newest *N* eligible games from the public API (optional `--time-control`).
-3. **Cache** — PGNs under `reports/.../games/`.
-4. **Engine** — Analyze only the requested player’s moves with local Stockfish (`--depth`, `--workers`).
-5. **Metrics** — ACPL (per-move loss capped at 1000 cp for averages), median CPL, phase/opening aggregates, pattern indicators.
-6. **Habits** — Deterministic cross-game weaknesses.
-7. **Tactics** — Checkmate piece, blunder piece, approximate fork/pin/skewer/discovered-attack motifs.
-8. **Coaching (optional)** — If `--coach`, send an engine-grounded brief to OpenAI; **never store the API key in reports**.
-9. **Outputs** — `report.html`, `analysis.json`, update `players/.../profile.json`.
-
-### Re-coach without re-analyzing
-
-```bash
-check-yourself coach --from-report reports/USERNAME-TIMESTAMP --no-llm
-check-yourself coach --from-report reports/USERNAME-TIMESTAMP/analysis.json
+```sh
+check-yourself analyze-pgn single.pgn --color black --depth 6 -o single.json
+check-yourself analyze-pgn batch.pgn --player Alice --depth 6 -o batch.json --html batch.html
 ```
 
----
+White is the default perspective. A named player can switch colors across the
+batch. JSON goes to stdout unless an output file is provided. Output paths must
+be new files. Open the HTML in your browser to select a graph point, compare
+actual and recommended continuations, or try an exercise before revealing a solution.
 
-## How the HTML report (web UI) works
+To see both formats with synthetic games, run the fixture generator from the
+source checkout and open `single.html` or `multi.html` in its output:
 
-The report is a **single self-contained HTML file**. Plotly.js and a small SVG board
-script are embedded so charts and boards work offline (no server, no CDN).
-
-### What’s on the page
-
-| Section | Source |
-|---------|--------|
-| Header | Player, platform, depth, time |
-| AI coaching | Present only if `--coach` succeeded |
-| Coach walkthrough | Click-through boards for swings / habits / themes / tactics |
-| Error heatmaps | Where mistakes/blunders originate or land |
-| Player summary | Record, median CPL, capped ACPL, error rates |
-| Visualizations | Plotly charts including piece/tactics bars |
-| Phase / opening tables | Aggregates |
-| Pattern indicators | Winning spoiled, equal→lost, etc. |
-| Pieces & tactics | Mating pieces, blunder pieces, motif examples |
-| Habits & weaknesses | Deterministic habit analyzer + boards |
-| Per-game details | Eval graph, critical boards, coaching notes |
-
----
-
-## Installation
-
-Requires **Python 3.11+** and a local **Stockfish** binary.
-
-```bash
-git clone <this-repo> check-yourself
-cd check-yourself
-python3.11 -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -e .
+```sh
+python tests/browser/generate_reports.py /tmp/check-yourself-examples
 ```
 
-Dev extras: `pip install -e ".[dev]"`.
+## Python API
 
-### Stockfish setup
+```python
+from check_yourself import AnalysisOptions, AnalysisResult, analyze_game
 
-**macOS:** `brew install stockfish`  
-**Linux (Debian/Ubuntu):** `sudo apt install stockfish`  
-**Windows:** download from [stockfishchess.org/download](https://stockfishchess.org/download/), then `--stockfish-path` or `PATH`.
+pgn = """[White "Alice"]
+[Black "Bob"]
+[Result "0-1"]
 
-Verify with `check-yourself doctor`.
-
----
-
-## Quick start
-
-```bash
-check-yourself analyze USERNAME --games 10
-check-yourself analyze USERNAME --platform lichess --games 10 --workers 4
+1. f3 e5 2. g4 Qh4# 0-1
+"""
+review = analyze_game(pgn, color="black", options=AnalysisOptions(depth=6))
+last = review.games[0].timeline[-1]
+assert last.uci == "d8h4"
+assert last.evaluation is not None and last.evaluation.display() == "+M0"
+assert AnalysisResult.model_validate_json(review.model_dump_json()) == review
 ```
 
-### Optional AI coaching
+See the [public API guide](docs/public-api.md) for batch analysis, offline HTML
+and a backend integration example. See [JSON compatibility](docs/schema.md)
+for the public and legacy formats.
 
-```bash
-cp .env.example .env   # then edit .env — do not commit .env
-# or: export OPENAI_API_KEY=sk-...
-check-yourself analyze USERNAME --games 20 --workers 4 --coach
-```
+## What the scores mean
 
-Default model: `gpt-4.1-mini`. Prefer env / `.env` over `--openai-api-key`.
+Stockfish compares the played continuation with its preferred move at the
+selected search depth. Average centipawn loss caps each move's contribution.
+Mate distances are reported separately. Critical positions, game phases and
+tactical patterns use heuristics. Batch reports show sample sizes and opening
+labels only where available. Exercises confirm the saved recommendation and
+all immediate mates. Other legal choices can remain ungraded.
 
----
+Engine version, search settings and platform can influence the results. See
+[metrics and limitations](docs/metrics.md) for definitions.
 
-## Secrets & security
+## Privacy and offline operation
 
-- **Never commit** `.env`, API keys, or real credentials. `.gitignore` already excludes
-  `.env`, `.env.*` (except `.env.example`), `reports/`, and `players/`.
-- Copy `.env.example` → `.env` and fill `OPENAI_API_KEY` locally if you use `--coach`.
-- The key is read from the environment / `.env` / a hidden prompt; it is **never**
-  written into `analysis.json`, HTML reports, fixtures, or profiles.
-- Prefer `OPENAI_API_KEY` in `.env` over passing `--openai-api-key` (avoids shell history).
-- If a key is ever committed or leaked, **rotate it immediately** in the OpenAI dashboard.
+The supported PGN workflow uses a local executable and needs no account, API
+key, network access or profile. PGN headers and game data can appear in JSON or
+HTML, so review reports before sharing them. On POSIX, the CLI creates named output files with owner-only access.
+Use a private directory, especially when redirecting stdout. Use trusted Stockfish
+binaries and reasonably sized PGN inputs. Server hosts should enforce their own
+file, batch, time, and memory limits. Experimental connected commands
+are isolated in the `[legacy]` extra and are outside this release's supported
+local workflow. Legacy coaching sends game PGN content to its configured service
+when requested.
 
----
+## Licensing and contribution
 
-## Privacy
+See [project license](LICENSE) and [third-party notices](THIRD_PARTY_NOTICES.md).
+This distribution is GPL-3.0-or-later. Existing MIT grants are preserved in
+[LICENSE.MIT](LICENSE.MIT). Stockfish and python-chess carry separate GPL licenses.
+No Stockfish binary or opening-study dataset is bundled.
 
-- Uses Chess.com’s and Lichess’s **public** APIs only.
-- Games and reports stay **local** under `reports/` and `players/` (gitignored).
-- No account passwords are stored.
-- Optional OpenAI coaching sends compact engine-grounded summaries when enabled.
-
----
-
-## Calculated metrics
-
-See [docs/metrics.md](docs/metrics.md).
-
-- **Median CPL** — robust one-number summary of typical move quality  
-- **Avg ACPL** — mean of per-move losses, each capped at **1000 cp** (mate-scale raw losses still used for blunder labels / critical ranking)  
-- Inaccuracies / mistakes / blunders, phase & opening aggregates, habits, tactics heuristics  
-
-There is **no proprietary “accuracy” score**.
-
----
-
-## Architecture
-
-See [docs/architecture.md](docs/architecture.md).
-
-```text
-CLI → GameSource → PGN cache → Stockfish
-    → aggregates / habits / tactics
-    → HTML (charts + boards) + analysis.json
-    → optional OpenAI coaching + players/profile.json
-```
-
----
-
-## Development
-
-```bash
-python3.11 -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
-ruff check src tests
-mypy
-pytest                 # offline suite (default)
-pytest -m integration  # optional live network / Stockfish
-python examples/run_fixture_analysis.py
-```
-
----
-
-## Roadmap
-
-| Stage | Scope |
-|-------|--------|
-| **1–2 (0.2.0)** | CLI, Chess.com + Lichess, Stockfish, HTML/JSON, habits, tactics, boards, optional coaching + profiles |
-| **3** | Local interactive dashboard (consumes `analysis.json`) |
-| **4** | Optional MCP interface and public-package polish |
-
----
-
-## Disclaimer
-
-Check Yourself is an independent open-source project. It is **not affiliated with,
-endorsed by, or associated with Chess.com, Lichess, or Stockfish**. Those names are
-used only to describe compatibility with publicly available APIs and engines.
-
-Engine evaluations are imperfect. Treat reports as study aids, not absolute truth.
-
----
-
-## License
-
-MIT — see [LICENSE](LICENSE).
+Development checks and local-engine tests are described in [CONTRIBUTING.md](CONTRIBUTING.md).

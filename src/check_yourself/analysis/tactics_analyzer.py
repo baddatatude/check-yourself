@@ -48,7 +48,9 @@ def _player_color(game: GameAnalysisResult) -> chess.Color:
     return chess.WHITE if game.metadata.user_color == "white" else chess.BLACK
 
 
-def _counts_from_counter(counter: Counter[str], *, total_hint: int | None = None) -> list[PieceCount]:
+def _counts_from_counter(
+    counter: Counter[str], *, total_hint: int | None = None
+) -> list[PieceCount]:
     total = total_hint if total_hint is not None else sum(counter.values())
     rows: list[PieceCount] = []
     for name, count in counter.most_common():
@@ -114,7 +116,9 @@ def _mating_piece_against_player(game: GameAnalysisResult) -> str | None:
     return _piece_name(piece.piece_type)
 
 
-def _ray_behind(board: chess.Board, slider: chess.Square, first_hit: chess.Square) -> chess.Square | None:
+def _ray_behind(
+    board: chess.Board, slider: chess.Square, first_hit: chess.Square
+) -> chess.Square | None:
     """Next occupied square beyond ``first_hit`` on the ray from ``slider``."""
     sf, sr = chess.square_file(slider), chess.square_rank(slider)
     ff, fr = chess.square_file(first_hit), chess.square_rank(first_hit)
@@ -207,9 +211,8 @@ def _classify_opponent_move(
                 piece
                 and piece.color == attacker
                 and piece.piece_type in {chess.BISHOP, chess.ROOK, chess.QUEEN}
-            ):
-                if sq not in sliders:
-                    sliders.append(sq)
+            ) and sq not in sliders:
+                sliders.append(sq)
 
         # Prefer motifs created/used by the reply move itself
         for slider in sliders:
@@ -229,12 +232,10 @@ def _classify_opponent_move(
                     continue
                 fv = PIECE_VALUES.get(front.piece_type, 0)
                 bv = PIECE_VALUES.get(back.piece_type, 0)
-                if back.piece_type == chess.KING or bv > fv:
-                    if TacticKind.PIN not in kinds:
-                        kinds.append(TacticKind.PIN)
-                if fv >= 5 and bv >= 1 and fv > bv:
-                    if TacticKind.SKEWER not in kinds:
-                        kinds.append(TacticKind.SKEWER)
+                if (back.piece_type == chess.KING or bv > fv) and TacticKind.PIN not in kinds:
+                    kinds.append(TacticKind.PIN)
+                if fv >= 5 and bv >= 1 and fv > bv and TacticKind.SKEWER not in kinds:
+                    kinds.append(TacticKind.SKEWER)
 
         # Discovered attack: a non-moving piece newly attacks a victim unit
         for sq, old_targets in before_attacks.items():
@@ -382,13 +383,13 @@ def analyze_piece_and_tactics(
     mate_counts = _counts_from_counter(mate_counter, total_hint=mate_total)
 
     tactic_rows: list[TacticCount] = []
-    for kind, count in tactic_counter.most_common():
+    for tactic_key, count in tactic_counter.most_common():
         tactic_rows.append(
             TacticCount(
-                kind=TacticKind(kind),
+                kind=TacticKind(tactic_key),
                 count=count,
                 share=round(count / errors_scanned, 4) if errors_scanned else 0.0,
-                examples=tactic_examples.get(kind, []),
+                examples=tactic_examples.get(tactic_key, []),
             )
         )
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 from typer.testing import CliRunner
 
 from check_yourself.cli import app
@@ -43,9 +44,19 @@ def test_analyze_missing_stockfish() -> None:
     assert "Stockfish" in result.stdout or "Stockfish" in (result.stderr or "")
 
 
-def test_doctor_runs(tmp_path: Path) -> None:
+def test_doctor_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "check_yourself.providers.chess_com.probe_chess_com", lambda *_: (True, "mocked")
+    )
+    monkeypatch.setattr(
+        "check_yourself.providers.lichess.probe_lichess", lambda *_: (True, "mocked")
+    )
+    existing = tmp_path / ".check_yourself_write_probe"
+    existing.write_text("keep", encoding="utf-8")
     result = runner.invoke(app, ["doctor", "--output", str(tmp_path)])
-    # May fail Stockfish or network in CI; still should produce table output
+    assert existing.read_text(encoding="utf-8") == "keep"
+    assert list(tmp_path.iterdir()) == [existing]
+    # The local Stockfish probe may fail on hosts without the executable.
     assert "Python / package" in result.stdout
     assert "Stockfish" in result.stdout
     assert "Chess.com" in result.stdout
