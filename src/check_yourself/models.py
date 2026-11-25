@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-SCHEMA_VERSION = "1.4.0"
+SCHEMA_VERSION = "1.7.0"
 PLAYER_PROFILE_SCHEMA_VERSION = "1.0.0"
 
 PlayerColor = Literal["white", "black"]
@@ -36,10 +36,22 @@ class Evaluation(BaseModel):
     value: int = Field(description="Centipawns or mate distance (positive = good for player)")
     white_cp: int | None = None
     white_mate: int | None = None
+    mate_for_player: bool | None = Field(
+        default=None, description="Whether the player delivers mate, including at distance zero"
+    )
+
+    @property
+    def mate_sign(self) -> int:
+        if self.kind != EvalKind.MATE:
+            return 0
+        if self.mate_for_player is not None:
+            return 1 if self.mate_for_player else -1
+        # Legacy reports encoded both terminal outcomes as zero.
+        return (self.value > 0) - (self.value < 0)
 
     def display(self) -> str:
         if self.kind == EvalKind.MATE:
-            sign = "+" if self.value > 0 else "-"
+            sign = {1: "+", -1: "-", 0: ""}[self.mate_sign]
             return f"{sign}M{abs(self.value)}"
         return f"{self.value / 100:+.2f}"
 
@@ -76,11 +88,13 @@ class MoveAnalysis(BaseModel):
     ply: int
     fullmove_number: int
     fen_before: str
+    fen_after: str | None = None
     played_san: str
     played_uci: str
     preferred_uci: str | None = None
     preferred_san: str | None = None
     principal_variation: list[str] = Field(default_factory=list)
+    principal_variation_uci: list[str] = Field(default_factory=list)
     eval_before: Evaluation
     eval_after: Evaluation
     eval_loss_cp: int
@@ -194,6 +208,57 @@ class OverallStats(BaseModel):
     patterns: PatternIndicators = Field(default_factory=PatternIndicators)
 
 
+class TimelinePosition(BaseModel):
+    """A position after exactly `ply` mainline moves, scored for the selected player."""
+
+    ply: int
+    fen: str
+    san: str | None = None
+    uci: str | None = None
+    move_number: str | None = None
+    evaluation: Evaluation | None = None
+    quality: MoveQuality | None = None
+    critical: bool = False
+
+
+class ContinuationMove(BaseModel):
+    """A legal move and its resulting position within a continuation."""
+
+    san: str
+    uci: str
+    fen: str
+    evaluation: Evaluation | None = None
+
+
+class Continuation(BaseModel):
+    """Actual and hypothetical moves from immediately before a critical ply."""
+
+    ply: int
+    start_fen: str
+    actual: list[ContinuationMove]
+    recommended: list[ContinuationMove]
+
+
+class ExerciseMove(BaseModel):
+    san: str
+    uci: str
+
+
+class ExerciseSolution(BaseModel):
+    evidence: Literal["engine_preferred", "immediate_checkmate"]
+    moves: list[ContinuationMove]
+
+
+class TrainingExercise(BaseModel):
+    game_id: str
+    ply: int
+    start_fen: str
+    perspective: PlayerColor
+    reference_evaluation: Evaluation
+    legal_moves: list[ExerciseMove]
+    solutions: list[ExerciseSolution]
+
+
 class GameAnalysisResult(BaseModel):
     metadata: GameMetadata
     moves: list[MoveAnalysis]
@@ -202,6 +267,9 @@ class GameAnalysisResult(BaseModel):
     inaccuracy_count: int = 0
     mistake_count: int = 0
     blunder_count: int = 0
+    exercises: list[TrainingExercise] = Field(default_factory=list)
+    continuations: list[Continuation] = Field(default_factory=list)
+    timeline: list[TimelinePosition] = Field(default_factory=list)
     eval_graph: list[dict[str, Any]] = Field(
         default_factory=list,
         description="Player-POV eval after each of the player's moves",
@@ -222,7 +290,8 @@ class AnalysisRunSettings(BaseModel):
     mistake_threshold: int
     blunder_threshold: int
     max_critical_positions: int
-    analyzed_at: datetime
+    analyzed_at: datetime | None
+    stockfish_version: str | None = None
     coaching_enabled: bool = False
     coaching_model: str | None = None
 
@@ -357,14 +426,72 @@ class TacticsReport(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class OpeningStudyCard(BaseModel):
+    """One opening from the player's sample, optionally enriched from the catalog."""
+
+    opening: str
+    eco: str | None = None
+    games_played: int = 0
+    wins: int = 0
+    losses: int = 0
+    draws: int = 0
+    average_centipawn_loss: float = 0.0
+    mistakes_per_game: float = 0.0
+    blunders_per_game: float = 0.0
+    small_sample: bool = True
+    matched: bool = False
+    catalog_name: str | None = None
+    main_line: str | None = None
+    ideas: list[str] = Field(default_factory=list)
+    study_hint: str = ""
+
+
+class OpeningStudyReport(BaseModel):
+    """Top openings to study, grounded on sample stats + bundled catalog."""
+
+    catalog_version: str = "unknown"
+    openings: list[OpeningStudyCard] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
+class ColorPerformance(BaseModel):
+    color: PlayerColor
+    games: int
+    moves: int
+    capped_acpl: float | None
+
+
+class DatedPerformance(BaseModel):
+    game_id: str
+    played_on: date
+    color: PlayerColor
+    moves: int
+    capped_acpl: float | None
+
+
+class BehaviorSummary(BaseModel):
+    games: int
+    scored_moves: int
+    by_color: list[ColorPerformance]
+    missed_mates: int
+    allowed_mates: int
+    known_result_games: int
+    advantageous_games: int
+    converted_advantageous_games: int
+    advantage_threshold_cp: int
+    dated_games: list[DatedPerformance]
+
+
 class AnalysisReport(BaseModel):
     schema_version: str = SCHEMA_VERSION
     settings: AnalysisRunSettings
     overall: OverallStats
     games: list[GameAnalysisResult]
+    behavior: BehaviorSummary | None = None
     warnings: list[str] = Field(default_factory=list)
     habits: HabitReport | None = None
     tactics: TacticsReport | None = None
+    opening_study: OpeningStudyReport | None = None
     coaching: CoachingReport | None = None
 
 

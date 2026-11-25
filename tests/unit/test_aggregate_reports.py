@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
+import pytest
 from tests.fixtures.mock_engine import ScriptedLossEngine
 from tests.fixtures.sample_data import SAMPLE_PGN_BLACK, SAMPLE_PGN_RAPID, SAMPLE_PGN_WHITE
 
@@ -12,7 +15,7 @@ from check_yourself.providers.chess_com import parse_pgn_metadata
 from check_yourself.reports.json_report import load_analysis_json
 
 
-def test_aggregate_and_openings(tmp_path) -> None:  # type: ignore[no-untyped-def]
+def test_aggregate_and_openings(tmp_path: Path) -> None:
     settings = AnalysisSettings(depth=2)
     engine = ScriptedLossEngine()
     metas = []
@@ -39,6 +42,7 @@ def test_aggregate_and_openings(tmp_path) -> None:  # type: ignore[no-untyped-de
     assert report.overall.wins + report.overall.losses + report.overall.draws == 3
     assert report.overall.by_phase
     assert report.overall.by_opening
+    assert report.opening_study is None
     assert (run_dir / "report.html").is_file()
     assert (run_dir / "analysis.json").is_file()
     assert list((run_dir / "games").glob("*.pgn"))
@@ -47,20 +51,39 @@ def test_aggregate_and_openings(tmp_path) -> None:  # type: ignore[no-untyped-de
     html = (run_dir / "report.html").read_text(encoding="utf-8")
     assert "Stockfish engine analysis" in html
     assert "Check Yourself" in html
+    assert "Openings to study" not in html
     assert "plotly" in html.lower() or "Plotly" in html or "js" in html
 
     loaded = load_analysis_json(run_dir / "analysis.json")
     assert loaded.schema_version == report.schema_version
+    assert loaded.schema_version == "1.7.0"
     assert loaded.overall.games_analyzed == 3
-    assert "raw" not in loaded.model_dump() or True  # schema preserves sections
+    assert loaded.opening_study is None
     dumped = loaded.model_dump()
     assert "games" in dumped
     assert "overall" in dumped
+    assert "opening_study" in dumped
     assert dumped["games"][0]["metadata"]
     assert dumped["games"][0]["moves"] is not None
     assert dumped["games"][0]["critical_positions"] is not None
+    dumped["schema_version"] = "1.6.0"
+    legacy = type(loaded).model_validate(dumped)
+    assert legacy.schema_version == "1.6.0"
+    assert legacy.games == loaded.games
 
 
 def test_aggregate_empty() -> None:
     stats = aggregate_stats([])
     assert stats.games_analyzed == 0
+
+
+
+@pytest.mark.parametrize(("username", "game_id"), [("/", "safe"), ("TestPlayer", "/")])
+def test_legacy_paths_reject_non_components(tmp_path: Path, username: str, game_id: str) -> None:
+    game = parse_pgn_metadata(SAMPLE_PGN_WHITE, username="TestPlayer", end_time=7)
+    assert game is not None
+    game.game_id = game_id
+    output = tmp_path / "reports"
+    with pytest.raises(ValueError, match="for report output"):
+        analyze_games_offline(username, [game], ScriptedLossEngine(), output_dir=output)
+    assert not output.exists()

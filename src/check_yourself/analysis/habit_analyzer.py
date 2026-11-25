@@ -265,8 +265,7 @@ def analyze_habits(
                 continue
             # Missed a mate (or huge forced win) indicated by mate eval before with better move
             if (
-                move.mate_before is not None
-                and move.mate_before > 0
+                move.eval_before.mate_sign > 0
                 and move.preferred_uci
                 and move.preferred_uci != move.played_uci
                 and move.eval_loss_cp >= settings.mistake_threshold
@@ -275,9 +274,8 @@ def analyze_habits(
                     _example_from_move(move, note="Missed a forced mate / mating sequence.")
                 )
             if (
-                move.mate_after is not None
-                and move.mate_after < 0
-                and (move.mate_before is None or move.mate_before >= 0)
+                move.eval_after.mate_sign < 0
+                and move.eval_before.mate_sign >= 0
                 and move.eval_loss_cp >= settings.mistake_threshold
             ):
                 allowed_mates.append(

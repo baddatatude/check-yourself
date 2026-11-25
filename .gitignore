@@ -20,9 +20,15 @@ venv/
 ENV/
 
 # Local outputs & secrets
-reports/
+/reports/
 players/
 *.pgn
+# Local assets pending provenance review
+/src/check_yourself/data/openings.json
+/src/check_yourself/reports/static/logo.png
+/src/check_yourself/reports/static/logo-watermark.png
+/src/check_yourself/reports/static/favicon.png
+/src/check_yourself/reports/static/favicon.ico
 .env
 .env.*
 !.env.example

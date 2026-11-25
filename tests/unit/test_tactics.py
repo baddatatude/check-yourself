@@ -38,7 +38,7 @@ def test_tactics_report_attached_and_html(tmp_path: Path) -> None:
     )
     assert report.tactics is not None
     assert report.tactics.games_analyzed == 3
-    assert report.schema_version == "1.4.0"
+    assert report.schema_version == "1.7.0"
     # Scripted blunders should produce a piece breakdown
     assert report.tactics.blunders_by_piece or report.tactics.notes
 

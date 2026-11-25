@@ -10,8 +10,10 @@ import chess.pgn
 
 from check_yourself.analysis.critical_positions import select_critical_positions
 from check_yourself.analysis.game_phase import classify_game_phase
+from check_yourself.analysis.training import build_exercise
 from check_yourself.config import AnalysisSettings, classify_cp_loss
 from check_yourself.engine.evaluation import (
+    WhiteEval,
     capped_eval_loss_for_acpl,
     evaluation_loss_cp,
     preferred_vs_played_loss_cp,
@@ -19,9 +21,12 @@ from check_yourself.engine.evaluation import (
 )
 from check_yourself.engine.stockfish import EngineAdapter
 from check_yourself.models import (
+    Continuation,
+    ContinuationMove,
     GameAnalysisResult,
     GameMetadata,
     MoveAnalysis,
+    TimelinePosition,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,10 +60,14 @@ class GameAnalyzer:
         if game is None:
             raise ValueError(f"Could not parse PGN for game {metadata.game_id}")
 
+        return self._analyze_game(game, metadata)
+
+    def _analyze_game(self, game: chess.pgn.Game, metadata: GameMetadata) -> GameAnalysisResult:
         board = game.board()
         player_is_white = metadata.user_color == "white"
         moves: list[MoveAnalysis] = []
         eval_graph: list[dict[str, object]] = []
+        timeline = [TimelinePosition(ply=0, fen=board.fen())]
         ply = 0
 
         node: chess.pgn.GameNode = game
@@ -69,6 +78,7 @@ class GameAnalyzer:
             mover_is_white = board.turn == chess.WHITE
             is_player_move = mover_is_white == player_is_white
 
+            move_analysis = None
             if is_player_move:
                 move_analysis = self._analyze_player_move(
                     board=board,
@@ -77,6 +87,7 @@ class GameAnalyzer:
                     metadata=metadata,
                     clock=_clock_from_comment(next_node.comment),
                 )
+                timeline[-1].evaluation = move_analysis.eval_before
                 moves.append(move_analysis)
                 eval_graph.append(
                     {
@@ -84,20 +95,39 @@ class GameAnalyzer:
                         "fullmove_number": move_analysis.fullmove_number,
                         "eval": move_analysis.eval_after.value
                         if move_analysis.eval_after.kind.value == "cp"
-                        else (
-                            1000
-                            if move_analysis.eval_after.value > 0
-                            else -1000
-                        ),
+                        else 1000 * move_analysis.eval_after.mate_sign,
                         "eval_kind": move_analysis.eval_after.kind.value,
                         "san": move_analysis.played_san,
                     }
                 )
 
+            san = board.san(move)
+            move_number = f"{board.fullmove_number}{'.' if board.turn else '...'}"
             board.push(move)
+            timeline.append(TimelinePosition(
+                ply=ply, fen=board.fen(), san=san, uci=move.uci(), move_number=move_number,
+                evaluation=move_analysis.eval_after if move_analysis else None,
+                quality=move_analysis.quality if move_analysis else None,
+            ))
             node = next_node
 
+        # The before/after searches cover all interior plies. Only the two
+        # boundary positions may need an additional search.
+        if ply:
+            self._fill_timeline_boundary(timeline[0], game.board(), metadata)
+            self._fill_timeline_boundary(timeline[-1], board, metadata)
         critical = select_critical_positions(moves, self.settings)
+        for position in critical:
+            timeline[position.ply].critical = True
+        moves_by_ply = {move.ply: move for move in moves}
+        continuations = [
+            self._continuation(timeline, moves_by_ply[position.ply])
+            for position in critical
+        ]
+        exercises = [
+            exercise for line in continuations
+            if (exercise := build_exercise(line, moves_by_ply[line.ply])) is not None
+        ]
         # ACPL uses capped losses so mate-scale swings don't dominate the mean.
         losses = [capped_eval_loss_for_acpl(m.eval_loss_cp) for m in moves]
         acpl = sum(losses) / len(losses) if losses else 0.0
@@ -111,7 +141,41 @@ class GameAnalyzer:
             mistake_count=sum(1 for m in moves if m.quality == "mistake"),
             blunder_count=sum(1 for m in moves if m.quality == "blunder"),
             eval_graph=eval_graph,
+            timeline=timeline,
+            continuations=continuations,
+            exercises=exercises,
         )
+
+    def _continuation(
+        self, timeline: list[TimelinePosition], move: MoveAnalysis,
+    ) -> Continuation:
+        start = timeline[move.ply - 1]
+        board = chess.Board(start.fen)
+        recommended = []
+        for uci in move.principal_variation_uci:
+            alternative = board.parse_uci(uci)
+            san = board.san(alternative)
+            board.push(alternative)
+            recommended.append(ContinuationMove(san=san, uci=uci, fen=board.fen()))
+        actual = [
+            ContinuationMove(san=row.san, uci=row.uci, fen=row.fen, evaluation=row.evaluation)
+            for row in timeline[move.ply : move.ply + self.settings.pv_moves]
+            if row.san is not None and row.uci is not None
+        ]
+        return Continuation(
+            ply=move.ply, start_fen=start.fen, actual=actual, recommended=recommended,
+        )
+
+    def _fill_timeline_boundary(
+        self, position: TimelinePosition, board: chess.Board, metadata: GameMetadata,
+    ) -> None:
+        if position.evaluation is not None:
+            return
+        if board.is_checkmate():
+            white_eval = WhiteEval(mate=0, terminal_mate_winner=not board.turn)
+        else:
+            white_eval = self.engine.analyse(board).white_eval
+        position.evaluation = to_player_evaluation(white_eval, metadata.user_color)
 
     def _analyze_player_move(
         self,
@@ -134,6 +198,7 @@ class GameAnalyzer:
         preferred_uci = preferred.uci() if preferred else None
         preferred_san = board.san(preferred) if preferred else None
         pv_sans: list[str] = []
+        pv_uci: list[str] = []
         tmp = board.copy(stack=False)
         for pv_move in before.pv:
             try:
@@ -141,17 +206,18 @@ class GameAnalyzer:
                     break
                 pv_sans.append(tmp.san(pv_move))
                 tmp.push(pv_move)
+                pv_uci.append(pv_move.uci())
             except (ValueError, AssertionError):
                 break
 
-        board_after = board.copy(stack=False)
+        board_after = board.copy()
         board_after.push(move)
         after = self.engine.analyse(board_after)
 
         # Prefer loss vs Stockfish's recommended continuation when available.
         # Fall back to before→after player-perspective loss otherwise.
         if preferred is not None and preferred != move:
-            board_best = board.copy(stack=False)
+            board_best = board.copy()
             board_best.push(preferred)
             after_best = self.engine.analyse(board_best)
             loss = preferred_vs_played_loss_cp(
@@ -184,11 +250,13 @@ class GameAnalyzer:
             ply=ply,
             fullmove_number=board.fullmove_number,
             fen_before=fen_before,
+            fen_after=board_after.fen(),
             played_san=played_san,
             played_uci=played_uci,
             preferred_uci=preferred_uci,
             preferred_san=preferred_san,
             principal_variation=pv_sans,
+            principal_variation_uci=pv_uci,
             eval_before=eval_before,
             eval_after=eval_after,
             eval_loss_cp=loss,

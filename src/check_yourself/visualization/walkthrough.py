@@ -204,12 +204,12 @@ def build_walkthrough_sequences(report: AnalysisReport) -> list[dict[str, Any]]:
         for gc in report.coaching.games:
             for theme in gc.themes:
                 game_themes[gc.game_id].add(theme.lower())
-            for note in gc.critical_notes:
-                notes_by_game_ply[(gc.game_id, note.ply)] = note.note
+            for critical_note in gc.critical_notes:
+                notes_by_game_ply[(gc.game_id, critical_note.ply)] = critical_note.note
 
         for theme in report.coaching.themes:
             theme_l = theme.lower()
-            steps: list[dict[str, Any]] = []
+            theme_steps: list[dict[str, Any]] = []
             seen: set[tuple[str, int]] = set()
             for game in report.games:
                 themes = game_themes.get(game.metadata.game_id, set())
@@ -226,7 +226,7 @@ def build_walkthrough_sequences(report: AnalysisReport) -> list[dict[str, Any]]:
                             key = (cp.game_id, cp.ply)
                             if key not in seen:
                                 seen.add(key)
-                                steps.append(
+                                theme_steps.append(
                                     _step_from_critical(
                                         cp,
                                         move_index,
@@ -242,7 +242,7 @@ def build_walkthrough_sequences(report: AnalysisReport) -> list[dict[str, Any]]:
                     if key in seen:
                         continue
                     seen.add(key)
-                    steps.append(
+                    theme_steps.append(
                         _step_from_critical(
                             cp,
                             move_index,
@@ -250,7 +250,7 @@ def build_walkthrough_sequences(report: AnalysisReport) -> list[dict[str, Any]]:
                         )
                     )
             # Fallback: top criticals overall if theme matching was thin
-            if len(steps) < 2:
+            if len(theme_steps) < 2:
                 for cp in sorted(
                     critical_index.values(),
                     key=lambda c: -c.eval_loss_cp,
@@ -261,12 +261,12 @@ def build_walkthrough_sequences(report: AnalysisReport) -> list[dict[str, Any]]:
                     note = notes_by_game_ply.get(key, "")
                     if theme_l.split()[0].lower() in (note + " " + cp.explanation).lower():
                         seen.add(key)
-                        steps.append(
+                        theme_steps.append(
                             _step_from_critical(cp, move_index, coach_note=note or None)
                         )
-                    if len(steps) >= 5:
+                    if len(theme_steps) >= 5:
                         break
-            if steps:
+            if theme_steps:
                 sequences.append(
                     {
                         "id": f"theme:{theme}",
@@ -275,7 +275,7 @@ def build_walkthrough_sequences(report: AnalysisReport) -> list[dict[str, Any]]:
                         "severity": None,
                         "summary": f"Positions linked to the coaching theme “{theme}”.",
                         "practice_hint": None,
-                        "steps": steps[:8],
+                        "steps": theme_steps[:8],
                     }
                 )
 
@@ -288,8 +288,8 @@ def build_walkthrough_sequences(report: AnalysisReport) -> list[dict[str, Any]]:
         notes_by_game_ply = {}
         if report.coaching:
             for gc in report.coaching.games:
-                for note in gc.critical_notes:
-                    notes_by_game_ply[(gc.game_id, note.ply)] = note.note
+                for critical_note in gc.critical_notes:
+                    notes_by_game_ply[(gc.game_id, critical_note.ply)] = critical_note.note
         sequences.insert(
             0,
             {
@@ -302,7 +302,7 @@ def build_walkthrough_sequences(report: AnalysisReport) -> list[dict[str, Any]]:
                     "click through to see what was played vs preferred."
                 ),
                 "practice_hint": (
-                    "Pause on each board: name a candidate, then compare the green arrow."
+                    None
                 ),
                 "steps": [
                     _step_from_critical(
@@ -377,6 +377,20 @@ def build_board_aids(report: AnalysisReport) -> dict[str, Any]:
     """Payload embedded in the HTML report for interactive boards."""
     return {
         "sequences": build_walkthrough_sequences(report),
+        "timelines": [
+            {
+                "game_id": game.metadata.game_id,
+                "perspective": game.metadata.user_color,
+                "continuations": [line.model_dump(mode="json") for line in game.continuations],
+                "exercises": [exercise.model_dump(mode="json") for exercise in game.exercises],
+                "positions": [
+                    {**position.model_dump(mode="json"),
+                     "label": position.evaluation.display() if position.evaluation else None}
+                    for position in game.timeline
+                ],
+            }
+            for game in report.games if game.timeline
+        ],
         "heatmaps": build_heatmaps(report),
         "heatmap_labels": {
             "blunder_to": "Blunder destinations",

@@ -3,28 +3,34 @@
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from getpass import getpass
+from importlib.util import find_spec
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import typer
 from pydantic import SecretStr
 from rich.console import Console
 from rich.table import Table
 
-from check_yourself import __version__
+from check_yourself import (
+    AnalysisOptions,
+    PGNError,
+    StockfishError,
+    __version__,
+    analyze_games,
+)
 from check_yourself.config import AnalysisSettings, TimeControlFilter
 from check_yourself.engine.stockfish import EngineError, probe_stockfish
-from check_yourself.pipeline import AnalysisPipeline
-from check_yourself.providers.base import ProviderError, normalize_platform
-from check_yourself.providers.chess_com import ChessComError, probe_chess_com, validate_username
-from check_yourself.providers.coaching import probe_openai_key
-from check_yourself.providers.lichess import LichessError, probe_lichess, validate_lichess_username
+from check_yourself.models import PlayerColor
+from check_yourself.reporting import ReportError, render_html
 
 app = typer.Typer(
     name="check-yourself",
     help=(
-        "Download Chess.com or Lichess games, analyze them with Stockfish, "
+        "Analyze local PGN games with Stockfish "
         "and generate visual reports.\n\n"
         "Check yourself before your rating wrecks itself."
     ),
@@ -75,7 +81,16 @@ def _resolve_api_key_for_coach(settings: AnalysisSettings, explicit: str | None)
     return entered
 
 
+def _require_legacy() -> None:
+    if any(find_spec(name) is None for name in ("httpx", "jinja2", "plotly")):
+        err_console.print("Install check-yourself-chess[legacy] for this experimental command.")
+        raise typer.Exit(code=2)
+
+
 def _validate_username_for_platform(platform: str, username: str) -> None:
+    from check_yourself.providers.chess_com import validate_username
+    from check_yourself.providers.lichess import validate_lichess_username
+
     if platform == "lichess":
         validate_lichess_username(username)
     else:
@@ -93,6 +108,70 @@ def main(
     ),
 ) -> None:
     """Check Yourself CLI."""
+
+
+def _write_private_output(path: Path, contents: str) -> None:
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as file:
+        file.write(contents)
+
+
+@app.command("analyze-pgn")
+def analyze_pgn_cmd(
+    pgn: Path = typer.Argument(..., help="UTF-8 PGN file containing one or more standard games"),
+    color: PlayerColor | None = typer.Option(
+        None, "--color", help="Fixed side in every game (default: white)"
+    ),
+    player: str | None = typer.Option(
+        None, "--player", help="Match a player in each game's White/Black headers"
+    ),
+    stockfish_path: Path | None = typer.Option(
+        None, "--stockfish-path", help="Local executable (default: stockfish on PATH)"
+    ),
+    depth: int = typer.Option(12, min=1, max=40, help="Search depth per position"),
+    threads: int = typer.Option(1, min=1, max=32, help="Stockfish threads"),
+    hash_mb: int = typer.Option(16, min=1, max=1024, help="Stockfish hash size in MiB"),
+    output: Path | None = typer.Option(
+        None, "--output", "-o", help="Write JSON to a new file instead of stdout"
+    ),
+    html: Path | None = typer.Option(None, "--html", help="Also write a new offline HTML file"),
+) -> None:
+    """Analyze local PGN and emit versioned JSON. Requires no internet or API key."""
+    try:
+        destinations = [path for path in (output, html) if path is not None]
+        if len(destinations) == 2 and destinations[0].resolve() == destinations[1].resolve():
+            raise PGNError("JSON and HTML outputs must be different files")
+        for path in destinations:
+            if path.exists() or path.is_symlink():
+                raise PGNError(f"Output already exists: {path}")
+            if not path.parent.is_dir():
+                raise PGNError(f"Output directory does not exist: {path.parent}")
+
+        result = analyze_games(
+            pgn.read_text(encoding="utf-8-sig"),
+            options=AnalysisOptions(
+                stockfish_path=stockfish_path, depth=depth, threads=threads, hash_mb=hash_mb,
+            ),
+            color=color,
+            player=player,
+        )
+        json_text = result.model_dump_json(indent=2) + "\n"
+        html_text = render_html(result) if html is not None else None
+        if html is not None and html_text is not None:
+            _write_private_output(html, html_text)
+        if output is None:
+            typer.echo(json_text, nl=False)
+        else:
+            _write_private_output(output, json_text)
+    except (PGNError, OSError, UnicodeError) as exc:
+        err_console.print(f"Error: {exc}", markup=False, highlight=False)
+        raise typer.Exit(code=2) from exc
+    except StockfishError as exc:
+        err_console.print(f"Stockfish error: {exc}", markup=False, highlight=False)
+        raise typer.Exit(code=3) from exc
+    except ReportError as exc:
+        err_console.print(f"Report error: {exc}", markup=False, highlight=False)
+        raise typer.Exit(code=2) from exc
 
 
 @app.command("analyze")
@@ -149,7 +228,12 @@ def analyze_cmd(
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Debug logging"),
 ) -> None:
-    """Analyze a player's recent games with Stockfish."""
+    """Experimental: download and analyze a player's recent online games."""
+    _require_legacy()
+    from check_yourself.pipeline import AnalysisPipeline
+    from check_yourself.providers.base import ProviderError, normalize_platform
+    from check_yourself.providers.chess_com import ChessComError
+    from check_yourself.providers.lichess import LichessError
     _configure_logging(verbose)
     settings = AnalysisSettings()
     if stockfish_path is not None:
@@ -292,7 +376,8 @@ def coach_cmd(
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v", help="Debug logging"),
 ) -> None:
-    """Re-coach from a saved report without re-running Stockfish."""
+    """Experimental: re-coach from a saved report."""
+    _require_legacy()
     from check_yourself.pipeline import recoach_from_report
     from check_yourself.providers.coaching import CoachingError
 
@@ -364,7 +449,11 @@ def doctor_cmd(
         help="Output directory to test for write access",
     ),
 ) -> None:
-    """Check local environment readiness."""
+    """Experimental: check Stockfish and connected providers."""
+    _require_legacy()
+    from check_yourself.providers.chess_com import probe_chess_com
+    from check_yourself.providers.coaching import probe_openai_key
+    from check_yourself.providers.lichess import probe_lichess
     settings = AnalysisSettings()
     if stockfish_path is not None:
         settings.stockfish_path = str(stockfish_path)
@@ -413,9 +502,9 @@ def doctor_cmd(
 
     try:
         output.mkdir(parents=True, exist_ok=True)
-        probe = output / ".check_yourself_write_probe"
-        probe.write_text("ok", encoding="utf-8")
-        probe.unlink(missing_ok=True)
+        with NamedTemporaryFile(dir=output, prefix=".check-yourself-probe-") as probe:
+            probe.write(b"ok")
+            probe.flush()
         write_ok, write_detail = True, str(output.resolve())
     except OSError as exc:
         write_ok, write_detail = False, str(exc)

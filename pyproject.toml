@@ -5,36 +5,37 @@ build-backend = "hatchling.build"
 [project]
 name = "check-yourself-chess"
 version = "0.2.0"
-description = "Download Chess.com or Lichess games, analyze them with Stockfish, and generate visual reports."
+description = "Analyze local chess PGNs with Stockfish and generate offline reports."
 readme = "README.md"
-license = "MIT"
+license = "GPL-3.0-or-later"
+license-files = ["COPYING", "LICENSE.MIT", "THIRD_PARTY_NOTICES.md"]
 requires-python = ">=3.11"
 authors = [{ name = "Check Yourself Contributors" }]
-keywords = ["chess", "stockfish", "chess.com", "analysis", "pgn"]
+keywords = ["chess", "stockfish", "analysis", "pgn"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Environment :: Console",
   "Intended Audience :: End Users/Desktop",
-  "License :: OSI Approved :: MIT License",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
   "Programming Language :: Python :: 3.13",
+  "Programming Language :: Python :: 3.14",
   "Topic :: Games/Entertainment :: Board Games",
 ]
 dependencies = [
   "chess>=1.10",
-  "httpx>=0.27",
-  "jinja2>=3.1",
-  "plotly>=5.22",
   "pydantic>=2.7",
   "pydantic-settings>=2.3",
-  "typer>=0.12",
-  "rich>=13.7",
+  "typer>=0.29.2",
+  "rich>=13.8.0",
 ]
 
 [project.optional-dependencies]
+html = ["jinja2>=3.1.6", "plotly>=5.22"]
+legacy = ["check-yourself-chess[html]", "httpx>=0.27"]
 dev = [
+  "check-yourself-chess[legacy]",
   "mypy>=1.10",
   "pytest>=8.2",
   "pytest-cov>=5.0",
@@ -46,14 +47,26 @@ dev = [
 check-yourself = "check_yourself.cli:app"
 
 [project.urls]
-Homepage = "https://github.com/example/check-yourself"
-Documentation = "https://github.com/example/check-yourself#readme"
-Issues = "https://github.com/example/check-yourself/issues"
+Homepage = "https://github.com/baddatatude/check-yourself"
+Documentation = "https://github.com/baddatatude/check-yourself#readme"
+Issues = "https://github.com/baddatatude/check-yourself/issues"
+
+# Exclude pending-provenance assets even from a working directory with local copies.
+[tool.hatch.build]
+exclude = [
+  "/src/check_yourself/data/openings.json",
+  "/src/check_yourself/reports/static/*.png",
+  "/src/check_yourself/reports/static/*.ico",
+  "/docs/placeholders/report-preview.svg",
+  "/src/check_yourself/analysis/opening_study.py",
+]
 
 [tool.hatch.build.targets.wheel]
+core-metadata-version = "2.4"
 packages = ["src/check_yourself"]
 
 [tool.hatch.build.targets.sdist]
+core-metadata-version = "2.4"
 include = [
   "src/check_yourself",
   "tests",
@@ -61,8 +74,11 @@ include = [
   "examples",
   "README.md",
   "LICENSE",
+  "COPYING",
+  "LICENSE.MIT",
   "CHANGELOG.md",
   "CONTRIBUTING.md",
+  "THIRD_PARTY_NOTICES.md",
 ]
 
 [tool.pytest.ini_options]

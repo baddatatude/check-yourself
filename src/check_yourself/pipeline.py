@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import logging
 import queue
+import re
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import UTC, datetime
 from pathlib import Path
+from tempfile import mkdtemp
 
 from check_yourself.analysis.aggregate import aggregate_stats
 from check_yourself.analysis.game_analyzer import GameAnalyzer
@@ -42,6 +44,26 @@ from check_yourself.reports.json_report import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _validate_game_ids(games: list[GameMetadata]) -> None:
+    seen: set[str] = set()
+    for game in games:
+        identifier = game.game_id
+        if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}", identifier):
+            raise ValueError("Invalid game identifier for report output")
+        key = identifier.casefold()
+        if key in seen:
+            raise ValueError("Duplicate game identifier for report output")
+        seen.add(key)
+
+
+def _new_run_dir(output: Path, username: str) -> Path:
+    if not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}", username):
+        raise ValueError("Invalid username for report output")
+    output.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    return Path(mkdtemp(prefix=f"{username.lower()}-{stamp}-", dir=output))
 
 
 def _analyze_games_sequential(
@@ -142,6 +164,7 @@ def analyze_game_batch(
     When ``workers > 1`` and no engine is injected, starts a pool of Stockfish
     processes; on failure, warns and falls back to a single sequential engine.
     """
+    _validate_game_ids(metadata_list)
     warn = warnings if warnings is not None else []
     worker_count = max(1, workers if workers is not None else settings.workers)
 
@@ -319,8 +342,7 @@ class AnalysisPipeline:
         settings = self.settings
         platform_name = normalize_platform(platform)
         out_root = Path(output_dir or settings.default_output_dir)
-        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-        run_dir = out_root / f"{username.lower()}-{stamp}"
+        run_dir = _new_run_dir(out_root, username)
         games_dir = run_dir / "games"
         assets_dir = run_dir / "assets"
         games_dir.mkdir(parents=True, exist_ok=True)
@@ -339,6 +361,7 @@ class AnalysisPipeline:
                 time_control=time_control,
             )
             warnings.extend(fetch_warnings)
+            _validate_game_ids(metadata_list)
 
             for meta in metadata_list:
                 (games_dir / f"{meta.game_id}.pgn").write_text(meta.pgn, encoding="utf-8")
@@ -433,8 +456,8 @@ def analyze_games_offline(
 ) -> tuple[AnalysisReport, Path]:
     """Run analysis from preloaded games (for tests / offline fixtures)."""
     settings = settings or AnalysisSettings()
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    run_dir = output_dir / f"{username.lower()}-{stamp}"
+    _validate_game_ids(games_meta)
+    run_dir = _new_run_dir(output_dir, username)
     games_dir = run_dir / "games"
     (run_dir / "assets").mkdir(parents=True, exist_ok=True)
     games_dir.mkdir(parents=True, exist_ok=True)

@@ -29,6 +29,10 @@ CLI (Typer) --platform chess.com|lichess
 - Findings always appear in the HTML report; `--coach` sends them as `habit_brief`
   so the LLM explains evidence rather than inventing patterns.
 
+## Opening study
+
+- Opening summaries use available PGN headers. Catalog-backed study cards are deferred.
+
 ## Piece & tactics analysis
 
 - `analysis/tactics_analyzer.py` summarizes:

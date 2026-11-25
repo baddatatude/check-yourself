@@ -83,6 +83,9 @@ def merge_profile(
     coaching: CoachingReport | None = None,
 ) -> PlayerCoachingProfile:
     """Merge a new analysis/coaching session into the durable player profile."""
+    analyzed_at = report.settings.analyzed_at
+    if analyzed_at is None:
+        raise ValueError("A timestamp is required to update a legacy player profile")
     now = datetime.now(UTC)
     username = report.settings.username
     platform = report.settings.platform
@@ -94,7 +97,7 @@ def merge_profile(
     coaching = coaching if coaching is not None else report.coaching
     session = ProfileSessionRef(
         report_path=str(report_path),
-        analyzed_at=report.settings.analyzed_at,
+        analyzed_at=analyzed_at,
         games_analyzed=report.overall.games_analyzed,
         platform=platform,
         coaching_model=(coaching.model if coaching else report.settings.coaching_model),

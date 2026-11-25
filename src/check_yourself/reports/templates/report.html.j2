@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Check Yourself — {{ username }}</title>
+  {% if favicon_ico_url %}<link rel="icon" href="{{ favicon_ico_url }}" sizes="any"/>{% endif %}
+  {% if favicon_png_url %}<link rel="icon" type="image/png" href="{{ favicon_png_url }}" sizes="64x64"/>{% endif %}
+  {% if favicon_png_url %}<link rel="apple-touch-icon" href="{{ favicon_png_url }}"/>{% endif %}
+  <script type="text/javascript">{{ plotly_js|safe }}</script>
+  <script type="text/javascript">{{ board_js|safe }}</script>
+  <style>
+    :root {
+      --ink: #1a1a1a;
+      --muted: #5a5a5a;
+      --line: #d8d2c8;
+      --paper: #f7f4ef;
+      --panel: #ffffff;
+      --navy: #0b1f3a;
+      --accent: #1f4e79;
+      --cyan: #3ec6f0;
+      --gold: #f0a12e;
+      --warn: #8a4b08;
+      --danger: #8b1e1e;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      color: var(--ink);
+      background:
+        radial-gradient(ellipse at top left, #efe8dc 0%, transparent 50%),
+        linear-gradient(180deg, #fbfaf7 0%, var(--paper) 100%);
+      line-height: 1.5;
+      position: relative;
+      min-height: 100vh;
+    }
+    {% if logo_url %}
+    body::before {
+      content: "";
+      position: fixed;
+      right: -3rem;
+      bottom: -2rem;
+      width: min(42vw, 420px);
+      height: min(42vw, 420px);
+      background: url("{{ logo_url }}") center / contain no-repeat;
+      opacity: 0.12;
+      pointer-events: none;
+      z-index: 0;
+    }
+    @media (max-width: 720px) {
+      body::before {
+        right: -5rem;
+        bottom: -4rem;
+        width: min(70vw, 280px);
+        height: min(70vw, 280px);
+        opacity: 0.09;
+      }
+    }
+    {% endif %}
+    header.hero,
+    main,
+    footer {
+      position: relative;
+      z-index: 1;
+    }
+    header.hero {
+      padding: 2.5rem 1.5rem 1.5rem;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(135deg, var(--navy) 0%, #0f2a42 55%, #081628 100%);
+      color: #f5f7fa;
+    }
+    header.hero .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+    header.hero .brand-mark {
+      width: 64px;
+      height: 64px;
+      border-radius: 12px;
+      object-fit: cover;
+      box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
+      flex-shrink: 0;
+    }
+    header.hero .brand {
+      font-family: "IBM Plex Serif", Georgia, serif;
+      font-size: clamp(2rem, 4vw, 2.75rem);
+      font-weight: 600;
+      letter-spacing: -0.02em;
+      margin: 0;
+    }
+    header.hero .tagline {
+      margin: 0.35rem 0 0;
+      opacity: 0.85;
+      font-size: 0.95rem;
+    }
+    header.hero .meta {
+      margin-top: 1.25rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem 1.5rem;
+      font-size: 0.95rem;
+    }
+    main { max-width: 1100px; margin: 0 auto; padding: 1.5rem; }
+    section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 1.25rem 1.35rem;
+      margin-bottom: 1.25rem;
+    }
+    h2 {
+      font-family: "IBM Plex Serif", Georgia, serif;
+      font-size: 1.35rem;
+      margin: 0 0 0.75rem;
+      color: var(--accent);
+    }
+    h3 { margin: 1rem 0 0.5rem; font-size: 1.05rem; }
+    .notice {
+      background: #fff8e8;
+      border: 1px solid #e6d3a4;
+      color: var(--warn);
+      padding: 0.75rem 1rem;
+      border-radius: 6px;
+      margin-bottom: 1.25rem;
+      font-size: 0.95rem;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.75rem;
+    }
+    .stat {
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0.75rem;
+      background: #fcfcfb;
+    }
+    .stat .label { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    .stat .value { font-size: 1.35rem; font-weight: 600; margin-top: 0.15rem; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+    th, td { text-align: left; padding: 0.45rem 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+    th { color: var(--muted); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; }
+    .fen {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 0.8rem;
+      word-break: break-all;
+      background: #f3f1ec;
+      padding: 0.35rem 0.5rem;
+      border-radius: 4px;
+    }
+    .critical {
+      border-left: 3px solid var(--accent);
+      padding-left: 0.85rem;
+      margin: 0.85rem 0;
+    }
+    .muted { color: var(--muted); }
+    .quality-blunder { color: var(--danger); font-weight: 600; }
+    .quality-mistake { color: #b35c00; font-weight: 600; }
+    .coach {
+      border-left: 3px solid #2f6b4f;
+      padding-left: 0.85rem;
+      margin: 0.75rem 0;
+    }
+    .coach-themes {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin: 0.5rem 0 0.75rem;
+    }
+    .coach-themes span {
+      background: #e8f2ec;
+      color: #24553d;
+      border: 1px solid #c5decb;
+      border-radius: 4px;
+      padding: 0.15rem 0.5rem;
+      font-size: 0.85rem;
+    }
+    .opening-card {
+      border-top: 1px solid var(--line);
+      padding: 0.85rem 0 0.35rem;
+      margin-top: 0.65rem;
+    }
+    .opening-card:first-of-type {
+      border-top: none;
+      padding-top: 0;
+      margin-top: 0.35rem;
+    }
+    .opening-card h3 { margin-top: 0; }
+    .opening-card ul { margin: 0.4rem 0 0.5rem 1.1rem; padding: 0; }
+    .opening-card li { margin: 0.2rem 0; }
+    footer {
+      max-width: 1100px;
+      margin: 0 auto 2rem;
+      padding: 0 1.5rem;
+      color: var(--muted);
+      font-size: 0.85rem;
+    }
+    details.game { margin-top: 0.75rem; }
+    details.game > summary {
+      cursor: pointer;
+      font-weight: 600;
+      padding: 0.4rem 0;
+    }
+    .cy-walk-tabs {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.4rem;
+      margin: 0.5rem 0 1rem;
+    }
+    .cy-tab, .cy-btn {
+      appearance: none;
+      border: 1px solid var(--line);
+      background: #fcfcfb;
+      color: var(--ink);
+      border-radius: 6px;
+      padding: 0.35rem 0.7rem;
+      font: inherit;
+      font-size: 0.88rem;
+      cursor: pointer;
+    }
+    .cy-tab.active {
+      background: var(--navy);
+      border-color: var(--navy);
+      color: #f5f7fa;
+    }
+    .cy-btn:disabled {
+      opacity: 0.45;
+      cursor: default;
+    }
+    .cy-walk-board-wrap {
+      display: grid;
+      grid-template-columns: minmax(260px, 360px) 1fr;
+      gap: 1.25rem;
+      align-items: start;
+    }
+    .cy-walk-meta { grid-column: 1 / -1; min-width: 0; }
+    @media (max-width: 800px) {
+      .cy-walk-board-wrap { grid-template-columns: 1fr; }
+    }
+    .cy-walk-nav {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin: 0.75rem 0;
+    }
+    .cy-walk-counter { color: var(--muted); font-size: 0.9rem; }
+    .cy-board-svg {
+      display: block;
+      max-width: 100%;
+      height: auto;
+      border-radius: 6px;
+      box-shadow: 0 0 0 1px var(--line);
+    }
+    .cy-walk-nav[hidden] { display: none; }
+    .cy-timeline-chart { min-height: 280px; }
+    .cy-timeline-mates { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; }
+    .cy-timeline-position { display: flex; align-items: stretch; gap: .4rem; }
+    .cy-timeline-position .cy-board-svg { min-width: 0; }
+    .cy-eval-bar { width: .65rem; flex: 0 0 .65rem; border: 1px solid #26323a;
+      border-radius: 3px; background: #26323a; position: relative; overflow: hidden; }
+    .cy-eval-bar span { width: 100%; bottom: 0; position: absolute; background: #fbf5e9; }
+    .cy-inline-board { margin: 0.6rem 0; }
+    .cy-swatch {
+      display: inline-block;
+      width: 0.85rem;
+      height: 0.85rem;
+      border-radius: 2px;
+      vertical-align: -0.1rem;
+      margin-right: 0.2rem;
+    }
+    .cy-swatch-played { background: #b00020; }
+    .cy-swatch-pref { background: #2f6b4f; }
+    .cy-arrow-legend { margin-top: 0.75rem; }
+    #cy-heatmap .cy-heat-board { margin: 0.75rem 0; }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="brand-row">
+      {% if logo_mark_url %}
+      <img class="brand-mark" src="{{ logo_mark_url }}" width="64" height="64" alt="Check Yourself"/>
+      {% endif %}
+      <div>
+        <p class="brand">Check Yourself</p>
+        <p class="tagline">{{ tagline }}</p>
+      </div>
+    </div>
+    <div class="meta">
+      <div><strong>Player:</strong> {{ username }}</div>
+      <div><strong>Platform:</strong> {{ report.settings.platform }}</div>
+      <div><strong>Games analyzed:</strong> {{ report.overall.games_analyzed }}</div>
+      {% if report.settings.analyzed_at %}
+      <div><strong>Analyzed:</strong> {{ report.settings.analyzed_at }}</div>
+      {% endif %}
+      {% if report.settings.stockfish_version %}
+      <div><strong>Engine:</strong> {{ report.settings.stockfish_version }}</div>
+      {% endif %}
+      <div><strong>Stockfish depth:</strong> {{ report.settings.depth }}</div>
+    </div>
+  </header>
+
+  <main>
+    <div class="notice">
+      {% if report.coaching %}
+      This report combines <strong>Stockfish engine analysis</strong> with optional
+      <strong>OpenAI coaching</strong> grounded on those engine facts.
+      Coaching is interpretive study aid, not absolute truth.
+      {% else %}
+      This report is <strong>Stockfish engine analysis</strong>, not AI coaching.
+      Move quality labels are transparent thresholds on evaluation loss, not a proprietary accuracy score.
+      {% endif %}
+      Check Yourself is not affiliated with Chess.com, Lichess, or Stockfish.
+    </div>
+
+    {% if report.warnings %}
+    <section>
+      <h2>Warnings</h2>
+      <ul>
+        {% for w in report.warnings %}
+        <li>{{ w }}</li>
+        {% endfor %}
+      </ul>
+    </section>
+    {% endif %}
+
+    {% if report.coaching %}
+    <section>
+      <h2>AI coaching</h2>
+      <p class="muted">
+        Model {{ report.coaching.model }} · instruction pack {{ report.coaching.instruction_pack }}
+        · generated {{ report.coaching.generated_at }}
+      </p>
+      <div class="coach">
+        <p>{{ report.coaching.overall_summary }}</p>
+      </div>
+      {% if report.coaching.themes %}
+      <h3>Recurring themes</h3>
+      <div class="coach-themes">
+        {% for theme in report.coaching.themes %}
+        <span>{{ theme }}</span>
+        {% endfor %}
+      </div>
+      {% endif %}
+      {% if report.coaching.practice_suggestions %}
+      <h3>Practice suggestions</h3>
+      <ul>
+        {% for tip in report.coaching.practice_suggestions %}
+        <li>{{ tip }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    <section>
+      <h2>Coach walkthrough</h2>
+      <p class="muted">
+        Click a theme or habit, then step through boards.
+        Red arrow = played · green arrow = Stockfish preferred.
+      </p>
+      <div id="cy-walkthrough"></div>
+    </section>
+
+    <section>
+      <h2>Error heatmaps</h2>
+      <p class="muted">
+        Where mistakes and blunders originated or landed across this sample.
+      </p>
+      <div id="cy-heatmap"></div>
+    </section>
+
+    <section>
+      <h2>Analysis settings</h2>
+      <div class="grid">
+        <div class="stat"><div class="label">Platform</div><div class="value" style="font-size:0.95rem">{{ report.settings.platform }}</div></div>
+        <div class="stat"><div class="label">Stockfish</div><div class="value" style="font-size:0.95rem">{{ report.settings.stockfish_path }}</div></div>
+        <div class="stat"><div class="label">Depth</div><div class="value">{{ report.settings.depth }}</div></div>
+        <div class="stat"><div class="label">Games requested</div><div class="value">{{ report.settings.games_requested }}</div></div>
+        <div class="stat"><div class="label">Time control filter</div><div class="value">{{ report.settings.time_control_filter or "any" }}</div></div>
+        <div class="stat"><div class="label">Inaccuracy ≥</div><div class="value">{{ report.settings.inaccuracy_threshold }} cp</div></div>
+        <div class="stat"><div class="label">Mistake ≥</div><div class="value">{{ report.settings.mistake_threshold }} cp</div></div>
+        <div class="stat"><div class="label">Blunder ≥</div><div class="value">{{ report.settings.blunder_threshold }} cp</div></div>
+      </div>
+    </section>
+
+    <section>
+      <h2>Player summary</h2>
+      <div class="grid">
+        <div class="stat"><div class="label">Record</div><div class="value">{{ report.overall.wins }}-{{ report.overall.losses }}-{{ report.overall.draws }}</div></div>
+        <div class="stat"><div class="label">Win rate</div><div class="value">{{ (report.overall.win_rate * 100)|round(1) }}%</div></div>
+        <div class="stat"><div class="label">Median CPL</div><div class="value">{{ report.overall.median_centipawn_loss }}</div></div>
+        <div class="stat"><div class="label">Avg ACPL</div><div class="value">{{ report.overall.average_centipawn_loss }}</div></div>
+        <div class="stat"><div class="label">Inacc / game</div><div class="value">{{ report.overall.inaccuracies_per_game }}</div></div>
+        <div class="stat"><div class="label">Mistakes / game</div><div class="value">{{ report.overall.mistakes_per_game }}</div></div>
+        <div class="stat"><div class="label">Blunders / game</div><div class="value">{{ report.overall.blunders_per_game }}</div></div>
+        <div class="stat"><div class="label">Critical positions</div><div class="value">{{ report.overall.total_critical_positions }}</div></div>
+      </div>
+      <p class="muted">
+        ACPL averages cap each move’s loss at 1000 cp so mate-scale swings don’t dominate the mean.
+        Per-move raw losses (and blunder labels) still reflect full engine impact. Prefer median CPL for a robust summary.
+      </p>
+    </section>
+
+    {% if report.behavior %}
+    <section>
+      <h2>Patterns across games</h2>
+      <p>{{ report.behavior.games }} games · {{ report.behavior.scored_moves }} scored moves</p>
+      <table>
+        <thead><tr><th>Color</th><th>Games</th><th>Scored moves</th><th>Capped ACPL</th></tr></thead>
+        <tbody>
+          {% for color in report.behavior.by_color %}
+          <tr><td>{{ color.color|capitalize }}</td><td>{{ color.games }}</td>
+            <td>{{ color.moves }}</td>
+            <td>{{ color.capped_acpl if color.capped_acpl is not none else "—" }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p>Lost a detected forced mate {{ report.behavior.missed_mates }} time(s).
+        Allowed a newly detected forced mate {{ report.behavior.allowed_mates }} time(s).</p>
+      <p>{{ report.behavior.converted_advantageous_games }} wins from
+        {{ report.behavior.advantageous_games }} games with a sampled advantage
+        (at least {{ report.behavior.advantage_threshold_cp }} cp or mate on your turn).
+        {{ report.behavior.known_result_games }} games had known results.</p>
+      {% if report.behavior.dated_games %}
+      <details><summary>Dated observations ({{ report.behavior.dated_games|length }} games)</summary>
+        <table>
+          <thead><tr><th>Date (PGN)</th><th>Game</th><th>Color</th><th>Scored moves</th><th>Capped ACPL</th></tr></thead>
+          <tbody>
+            {% for point in report.behavior.dated_games %}
+            <tr><td>{{ point.played_on }}</td><td>{{ point.game_id }}</td><td>{{ point.color }}</td>
+              <td>{{ point.moves }}</td><td>{{ point.capped_acpl if point.capped_acpl is not none else "—" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </details>
+      {% endif %}
+      <p class="muted">These are observations at the selected engine depth. Small samples and
+        different opponents or game conditions can change the comparison.</p>
+    </section>
+    {% endif %}
+
+    <section>
+      <h2>Visualizations</h2>
+      {% if report.games|length > 1 %}
+      <div>{{ charts.results_by_color|safe }}</div>
+      <div>{{ charts.per_game_acpl|safe }}</div>
+      {% endif %}
+      <div>{{ charts.eval_loss_by_move|safe }}</div>
+      <div>{{ charts.eval_loss_by_phase|safe }}</div>
+      <div>{{ charts.mistakes_by_phase|safe }}</div>
+      {% if charts.opening_comparison %}
+      <div>{{ charts.opening_comparison|safe }}</div>
+      {% endif %}
+      {% if charts.mated_by_piece %}
+      <div>{{ charts.mated_by_piece|safe }}</div>
+      {% endif %}
+      {% if charts.blunders_by_piece %}
+      <div>{{ charts.blunders_by_piece|safe }}</div>
+      {% endif %}
+      {% if charts.tactics_that_hurt %}
+      <div>{{ charts.tactics_that_hurt|safe }}</div>
+      {% endif %}
+    </section>
+
+    <section>
+      <h2>By game phase</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Phase</th><th>Moves</th><th>Avg loss</th><th>Total loss</th>
+            <th>Mistakes</th><th>Blunders</th><th>Share of loss</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in report.overall.by_phase %}
+          <tr>
+            <td>{{ p.phase }}</td>
+            <td>{{ p.move_count }}</td>
+            <td>{{ p.average_eval_loss }}</td>
+            <td>{{ p.total_eval_loss }}</td>
+            <td>{{ p.mistake_count }}</td>
+            <td>{{ p.blunder_count }}</td>
+            <td>{{ (p.share_of_total_eval_loss * 100)|round(1) }}%</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+
+    {% if report.overall.by_opening %}
+    <section>
+      <h2>By opening</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Opening</th><th>ECO</th><th>Games</th><th>W-L-D</th>
+            <th>ACPL</th><th>Mistakes/g</th><th>Blunders/g</th><th>Note</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for o in report.overall.by_opening %}
+          <tr>
+            <td>{{ o.opening }}</td>
+            <td>{{ o.eco or "—" }}</td>
+            <td>{{ o.games_played }}</td>
+            <td>{{ o.wins }}-{{ o.losses }}-{{ o.draws }}</td>
+            <td>{{ o.average_centipawn_loss }}</td>
+            <td>{{ o.mistakes_per_game }}</td>
+            <td>{{ o.blunders_per_game }}</td>
+            <td>{% if o.small_sample %}small sample{% else %}—{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+
+    {% if report.opening_study and report.opening_study.openings %}
+    <section>
+      <h2>Openings to study</h2>
+      <p class="muted">
+        Your most-played openings in this sample, with study ideas from the bundled openings
+        catalog (v{{ report.opening_study.catalog_version }}) recorded in this report.
+      </p>
+      {% if report.opening_study.notes %}
+      <p class="muted">{{ report.opening_study.notes|join(" ") }}</p>
+      {% endif %}
+      {% for card in report.opening_study.openings %}
+      <div class="opening-card">
+        <h3>
+          {{ card.catalog_name or card.opening }}
+          {% if card.eco %}<span class="muted"> · {{ card.eco }}</span>{% endif %}
+        </h3>
+        <p>
+          {{ card.games_played }} game(s) ·
+          {{ card.wins }}-{{ card.losses }}-{{ card.draws }} ·
+          ACPL {{ card.average_centipawn_loss }}
+          {% if card.small_sample %} · <em>small sample</em>{% endif %}
+          {% if not card.matched %} · <em>no catalog match</em>{% endif %}
+        </p>
+        {% if card.main_line %}
+        <p class="fen">{{ card.main_line }}</p>
+        {% endif %}
+        {% if card.ideas %}
+        <ul>
+          {% for idea in card.ideas %}
+          <li>{{ idea }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        {% if card.study_hint %}
+        <p class="muted">{{ card.study_hint }}</p>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    <section>
+      <h2>Pattern indicators</h2>
+      <ul>
+        <li>Games reaching a clearly winning position: {{ report.overall.patterns.games_reached_winning }}</li>
+        <li>Winning positions later drawn or lost: {{ report.overall.patterns.winning_later_drawn_or_lost }}</li>
+        <li>Approximately equal positions later lost: {{ report.overall.patterns.equal_later_lost }}</li>
+      </ul>
+      {% if report.overall.patterns.notes %}
+      <p class="muted">{{ report.overall.patterns.notes|join(" ") }}</p>
+      {% endif %}
+    </section>
+
+    {% if report.tactics %}
+    <section>
+      <h2>Pieces &amp; tactics that hurt you</h2>
+      <p class="muted">
+        Mating piece from checkmated losses · blunder piece from your moved piece ·
+        forks/pins/skewers/discovered attacks as an <strong>approximate geometric scan</strong>
+        of opponent replies after mistakes/blunders
+        ({{ report.tactics.errors_scanned }} errors scanned) — not a full puzzle engine.
+        Treat motif counts as directional study signals, not exact frequencies.
+      </p>
+      {% if report.tactics.notes %}
+      <p class="muted">{{ report.tactics.notes|join(" ") }}</p>
+      {% endif %}
+
+      <h3>Checkmated by</h3>
+      {% if report.tactics.mated_by_piece %}
+      <div class="grid">
+        {% for row in report.tactics.mated_by_piece %}
+        <div class="stat">
+          <div class="label">{{ row.piece }}</div>
+          <div class="value">{{ row.count }}</div>
+          <div class="muted">{{ (row.share * 100)|round(0) }}% of mates</div>
+        </div>
+        {% endfor %}
+      </div>
+      <p class="muted">{{ report.tactics.games_checkmated }} checkmate(s) against you in this sample.</p>
+      {% else %}
+      <p class="muted">No checkmates against you (resignations/timeouts don’t count here).</p>
+      {% endif %}
+
+      <h3>Blunders by piece you moved</h3>
+      {% if report.tactics.blunders_by_piece %}
+      <table>
+        <thead>
+          <tr><th>Piece</th><th>Blunders</th><th>Share</th><th>Capped loss (cp)</th></tr>
+        </thead>
+        <tbody>
+          {% for row in report.tactics.blunders_by_piece %}
+          <tr>
+            <td>{{ row.piece }}</td>
+            <td>{{ row.count }}</td>
+            <td>{{ (row.share * 100)|round(1) }}%</td>
+            <td>{{ row.total_eval_loss_cp }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="muted">No blunders tagged for piece breakdown.</p>
+      {% endif %}
+
+      <h3>Tactical motifs after your errors</h3>
+      {% if report.tactics.tactics_that_hurt %}
+        {% for row in report.tactics.tactics_that_hurt %}
+        <div class="coach" style="margin-top:1rem">
+          <p>
+            <strong>{{ row.kind.value.replace('_', ' ')|title }}</strong>
+            · {{ row.count }} hit(s)
+            · {{ (row.share * 100)|round(1) }}% of scanned errors
+          </p>
+          {% if row.examples %}
+          <ul>
+            {% for ex in row.examples %}
+            <li>
+              Game {{ ex.game_id }}, move {{ ex.fullmove_number }}:
+              you played <strong>{{ ex.played_san }}</strong>
+              {% if ex.opponent_reply_san %}
+              · opponent can reply <strong>{{ ex.opponent_reply_san }}</strong>
+              {% endif %}
+              · loss {{ ex.eval_loss_cp }} cp
+              <div
+                class="cy-inline-board"
+                data-cy-board
+                data-fen="{{ ex.fen }}"
+                data-orientation="{{ ex.player_color }}"
+                data-played-uci="{{ ex.played_uci or '' }}"
+                data-preferred-uci="{{ ex.preferred_uci or '' }}"
+                data-width="240"
+              ></div>
+              <p class="muted">{{ ex.note }}</p>
+            </li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </div>
+        {% endfor %}
+      {% else %}
+      <p class="muted">No clear fork/pin/skewer/discovered-attack replies found.</p>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    {% if report.habits %}
+    <section>
+      <h2>Habits &amp; weaknesses</h2>
+      <p class="muted">
+        Deterministic cross-game findings from Stockfish metrics
+        ({{ report.habits.games_analyzed }} games). Not AI-invented.
+      </p>
+      {% if report.habits.notes %}
+      <p class="muted">{{ report.habits.notes|join(" ") }}</p>
+      {% endif %}
+      {% if report.habits.strengths %}
+      <h3>Relative strengths</h3>
+      <ul>
+        {% for s in report.habits.strengths %}
+        <li>{{ s }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if not report.habits.findings %}
+      <p class="muted">No strong recurring habits detected in this sample.</p>
+      {% endif %}
+      {% for finding in report.habits.findings %}
+      <div class="coach" style="margin-top:1rem">
+        <p>
+          <strong>{{ finding.title }}</strong>
+          · <span class="quality-{{ 'blunder' if finding.severity.value == 'high' else 'mistake' }}">{{ finding.severity.value }}</span>
+          {% if finding.thin_evidence %}<span class="muted"> · thin evidence</span>{% endif %}
+        </p>
+        <p>{{ finding.summary }}</p>
+        <p><strong>Practice:</strong> {{ finding.practice_hint }}</p>
+        {% if finding.examples %}
+        <ul>
+          {% for ex in finding.examples %}
+          <li>
+            Game {{ ex.game_id }}, move {{ ex.fullmove_number }}:
+            played <strong>{{ ex.played_san }}</strong>
+            {% if ex.preferred_san %}· preferred <strong>{{ ex.preferred_san }}</strong>{% endif %}
+            · loss {{ ex.eval_loss_cp }} cp
+            <div
+              class="cy-inline-board"
+              data-cy-board
+              data-fen="{{ ex.fen }}"
+              data-orientation="{{ ex.player_color or 'white' }}"
+              data-played-uci="{{ ex.played_uci or '' }}"
+              data-preferred-uci="{{ ex.preferred_uci or '' }}"
+              data-width="240"
+            ></div>
+            <div class="fen">FEN: {{ ex.fen }}</div>
+          </li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    <section>
+      <h2>Games</h2>
+      {% for game in report.games %}
+      <details class="game" {% if loop.first %}open{% endif %}>
+        <summary>
+          {{ game.metadata.game_id }} —
+          {{ game.metadata.white }} vs {{ game.metadata.black }}
+          ({{ game.metadata.user_color }}, {{ game.metadata.result }})
+          · ACPL {{ game.average_centipawn_loss }}
+        </summary>
+        <p class="muted">
+          {{ game.metadata.opening or "Opening unknown" }}
+          {% if game.metadata.eco %} ({{ game.metadata.eco }}){% endif %}
+          · {{ game.metadata.time_class }}
+          · {{ game.inaccuracy_count }} inaccuracies,
+          {{ game.mistake_count }} mistakes,
+          {{ game.blunder_count }} blunders
+        </p>
+        {% if game.timeline %}
+        <div class="cy-timeline" data-cy-timeline="{{ game.metadata.game_id }}"></div>
+        {% else %}
+        <div>{{ charts.game_charts[game.metadata.game_id]|safe }}</div>
+        {% endif %}
+
+        {% if report.coaching %}
+          {% for gc in report.coaching.games if gc.game_id == game.metadata.game_id %}
+        <h3>Coaching notes</h3>
+        <div class="coach">
+          <p>{{ gc.summary }}</p>
+          {% if gc.themes %}
+          <div class="coach-themes">
+            {% for theme in gc.themes %}<span>{{ theme }}</span>{% endfor %}
+          </div>
+          {% endif %}
+          {% if gc.critical_notes %}
+          <ul>
+            {% for note in gc.critical_notes %}
+            <li><strong>Ply {{ note.ply }}:</strong> {{ note.note }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          {% if gc.practice_suggestions %}
+          <p><strong>Practice:</strong> {{ gc.practice_suggestions|join('; ') }}</p>
+          {% endif %}
+        </div>
+          {% endfor %}
+        {% endif %}
+
+        <h3>Critical positions</h3>
+        {% if not game.critical_positions %}
+        <p class="muted">No critical positions selected for this game.</p>
+        {% endif %}
+        {% for cp in game.critical_positions %}
+        <div class="critical">
+          <p>
+            <strong>Move {{ cp.fullmove_number }}</strong>
+            · played <strong>{{ cp.played_san }}</strong>
+            {% if cp.preferred_san %}· Stockfish preferred <strong>{{ cp.preferred_san }}</strong>{% endif %}
+            · <span class="quality-{{ cp.quality }}">{{ cp.quality }}</span>
+            · loss {{ cp.eval_loss_cp }} cp
+            · {{ cp.eval_before.display() }} → {{ cp.eval_after.display() }}
+          </p>
+          <p>{{ cp.explanation }}</p>
+          <p class="muted">Reasons: {{ cp.reasons|map(attribute='value')|list|join(', ') }}</p>
+          <div
+            class="cy-inline-board"
+            data-cy-board
+            data-fen="{{ cp.fen }}"
+            data-orientation="{{ cp.player_color }}"
+            data-played-uci="{{ cp.played_uci }}"
+            data-preferred-uci="{{ cp.preferred_uci or '' }}"
+            data-width="280"
+          ></div>
+          <p class="fen">FEN: {{ cp.fen }}</p>
+          {% if cp.principal_variation %}
+          <p><strong>PV:</strong> {{ cp.principal_variation|join(' ') }}</p>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </details>
+      {% endfor %}
+    </section>
+  </main>
+
+  <footer>
+    Generated by Check Yourself {{ version }} · schema {{ report.schema_version }} ·
+    GPL-3.0-or-later
+    {% if report.coaching %}
+    · Stockfish analysis + optional OpenAI coaching
+    {% else %}
+    · Engine-only report
+    {% endif %}
+    <details>
+      <summary>Third-party chart licenses</summary>
+      <pre style="white-space: pre-wrap">{{ plotly_notices }}</pre>
+    </details>
+  </footer>
+  <script type="text/javascript">
+    window.CheckYourselfBoards.boot({{ board_aids|tojson }});
+  </script>
+</body>
+</html>

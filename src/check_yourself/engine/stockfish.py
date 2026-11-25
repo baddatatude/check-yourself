@@ -52,6 +52,8 @@ class StockfishEngine(AbstractContextManager["StockfishEngine"]):
         hash_mb: int = 16,
         threads: int = 1,
         pv_moves: int = 6,
+        timeout: float = 10,
+        strict_configuration: bool = False,
     ) -> None:
         self.path = path
         self.depth = depth
@@ -59,6 +61,9 @@ class StockfishEngine(AbstractContextManager["StockfishEngine"]):
         self.hash_mb = hash_mb
         self.threads = threads
         self.pv_moves = pv_moves
+        self.timeout = timeout
+        self.strict_configuration = strict_configuration
+        self._game: object | None = None
         self._engine: chess.engine.SimpleEngine | None = None
         self._version = "unknown"
 
@@ -95,18 +100,34 @@ class StockfishEngine(AbstractContextManager["StockfishEngine"]):
         if self._engine is not None:
             return
         try:
-            self._engine = chess.engine.SimpleEngine.popen_uci(self.path)
+            engine = chess.engine.SimpleEngine.popen_uci(self.path, timeout=self.timeout)
         except (OSError, chess.engine.EngineError) as exc:
             raise EngineError(f"Failed to start Stockfish at {self.path!r}: {exc}") from exc
+        self._engine = engine
+        configured = False
         try:
-            self._engine.configure({"Hash": self.hash_mb, "Threads": self.threads})
-        except chess.engine.EngineError:
-            logger.debug("Stockfish rejected Hash/Threads configuration", exc_info=True)
-        identity = self._engine.id
-        name = identity.get("name", "Stockfish")
-        ver = identity.get("version") or identity.get("author") or ""
-        self._version = f"{name} {ver}".strip()
+            try:
+                engine.configure({"Hash": self.hash_mb, "Threads": self.threads})
+            except chess.engine.EngineError:
+                if self.strict_configuration:
+                    raise
+                logger.debug("Stockfish rejected Hash/Threads configuration", exc_info=True)
+            identity = engine.id
+            self._version = identity.get("name", "unknown")
+            version = identity.get("version")
+            if version:
+                self._version += f" {version}"
+            configured = True
+        except (OSError, chess.engine.EngineError) as exc:
+            raise EngineError(f"Could not configure Stockfish at {self.path!r}: {exc}") from exc
+        finally:
+            if not configured:
+                self.close()
         logger.info("Started engine: %s", self._version)
+
+    def start_game(self) -> None:
+        """Reset the UCI game context before analyzing another game."""
+        self._game = object()
 
     def version(self) -> str:
         if self._engine is None:
@@ -123,8 +144,11 @@ class StockfishEngine(AbstractContextManager["StockfishEngine"]):
                 board,
                 chess.engine.Limit(depth=limit_depth),
                 multipv=self.multipv,
+                game=self._game,
             )
-        except chess.engine.EngineError as exc:
+        except TimeoutError as exc:
+            raise EngineError(f"Stockfish search exceeded {self.timeout:g} seconds") from exc
+        except (OSError, chess.engine.EngineError) as exc:
             raise EngineError(f"Stockfish analysis failed: {exc}") from exc
 
         primary = info[0] if isinstance(info, Sequence) and not isinstance(info, dict) else info
@@ -144,12 +168,20 @@ class StockfishEngine(AbstractContextManager["StockfishEngine"]):
         )
 
     def close(self) -> None:
-        if self._engine is not None:
+        engine, self._engine = self._engine, None
+        if engine is None:
+            return
+        try:
+            engine.quit()
+        except (OSError, chess.engine.EngineError):
+            logger.debug("Error quitting Stockfish", exc_info=True)
+        finally:
+            # python-chess closes the subprocess transport even if UCI quit fails.
+            engine.close()
             try:
-                self._engine.quit()
-            except chess.engine.EngineError:
-                logger.debug("Error quitting Stockfish", exc_info=True)
-            self._engine = None
+                engine.returncode.result(timeout=self.timeout)
+            except TimeoutError:
+                logger.warning("Timed out waiting for the Stockfish transport to close")
 
 
 def probe_stockfish(path: str | None) -> tuple[bool, str]:
